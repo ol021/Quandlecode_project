@@ -25,6 +25,9 @@ export function activate(context: vscode.ExtensionContext) {
 		'quandlecode.openFlowchart',
 		() => {
 
+			// Remember the editor that was open
+			const editor = vscode.window.activeTextEditor;
+
 			const panel = vscode.window.createWebviewPanel(
 				'flowchart',
 				'QuandleCode',
@@ -36,8 +39,54 @@ export function activate(context: vscode.ExtensionContext) {
 
 			panel.webview.html = getWebviewContent();
 
-			// Send current file immediately if one is open
-			const editor = vscode.window.activeTextEditor;
+			panel.webview.onDidReceiveMessage(
+				async (message) => {
+					
+					console.log("MESSAGE RECEIVED", message);
+
+					if(message.type !== "insertText"){
+						return;
+					}
+		
+					if(!editor){
+						vscode.window.showErrorMessage(
+							"No editor was open when QuandleCode started."
+						);
+						return;
+					}
+
+					const document = editor.document;
+
+					// last position in file
+					const end =
+						document.lineAt(
+							document.lineCount - 1
+						).range.end;
+		
+					await editor.edit(editBuilder => {
+		
+						editBuilder.insert(
+							end,
+							"\n// Inserted by QuandleCode\n"
+						);
+		
+					});
+
+					console.log("Text inserted");
+
+					// await editor.edit(editBuilder => {
+
+					// 	editBuilder.replace(
+					// 		editor.selection,
+					// 		"REPLACED"
+					// 	);
+			
+					// });
+			
+					// console.log("Text replaced");
+				}
+				
+			);
 
 			if (editor) {
 				panel.webview.postMessage({
@@ -50,10 +99,16 @@ export function activate(context: vscode.ExtensionContext) {
 			const changeListener =
 				vscode.workspace.onDidChangeTextDocument(event => {
 
-					panel.webview.postMessage({
-						type: "codeUpdate",
-						code: event.document.getText()
-					});
+					if(
+						editor &&
+						event.document.uri.toString() ===
+						editor.document.uri.toString()
+					){
+						panel.webview.postMessage({
+							type: "codeUpdate",
+							code: event.document.getText()
+						});
+					}
 
 				});
 
@@ -72,9 +127,28 @@ function getWebviewContent(): string {
 	return `
 	<h1>QuandleCode</h1>
 
+	<button id="testBtn">
+    	Add Text
+	</button>
+
 	<pre id="code">Open a file...</pre>
 
 	<script>
+
+		const vscode = acquireVsCodeApi();
+
+		document
+			.getElementById("testBtn")
+			.addEventListener("click", () => {
+
+				console.log("BUTTON CLICKED");
+
+				vscode.postMessage({
+					type: "insertText"
+				});
+
+			});
+
 		window.addEventListener("message", event => {
 			document.getElementById("code").textContent =
 				event.data.code;
